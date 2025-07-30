@@ -593,6 +593,15 @@
           "items": {
             "$ref": "#/$defs/EventConfig"
           }
+        },
+        "start_block": {
+          "description": "The block at which the indexer should start ingesting data for this specific contract. If not specified, uses the network's start_block.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
         }
       },
       "additionalProperties": false,
