@@ -71,6 +71,7 @@ let makeInitial = (~startBlock=0, ~blockLag=?) => {
   FetchState.make(
     ~eventConfigs=[baseEventConfig, baseEventConfig2],
     ~staticContracts=Js.Dict.fromArray([("Gravatar", [mockAddress0])]),
+    ~staticContractsWithStartBlocks=Js.Dict.fromArray([("Gravatar", None)]),
     ~dynamicContracts=[],
     ~startBlock,
     ~endBlock=None,
@@ -150,6 +151,7 @@ describe("FetchState.make", () => {
         FetchState.make(
           ~eventConfigs=[baseEventConfig],
           ~staticContracts=Js.Dict.empty(),
+          ~staticContractsWithStartBlocks=Js.Dict.empty(),
           ~dynamicContracts=[],
           ~startBlock=0,
           ~endBlock=None,
@@ -171,6 +173,7 @@ describe("FetchState.make", () => {
       let fetchState = FetchState.make(
         ~eventConfigs=[baseEventConfig],
         ~staticContracts=Js.Dict.fromArray([("Gravatar", [mockAddress1])]),
+        ~staticContractsWithStartBlocks=Js.Dict.fromArray([("Gravatar", None)]),
         ~dynamicContracts=[dc],
         ~startBlock=0,
         ~endBlock=None,
@@ -227,6 +230,7 @@ describe("FetchState.make", () => {
           baseEventConfig,
         ],
         ~staticContracts=Js.Dict.fromArray([("ContractA", [mockAddress1])]),
+        ~staticContractsWithStartBlocks=Js.Dict.fromArray([("ContractA", None)]),
         ~dynamicContracts=[dc],
         ~startBlock=0,
         ~endBlock=None,
@@ -298,6 +302,7 @@ describe("FetchState.make", () => {
           baseEventConfig,
         ],
         ~staticContracts=Js.Dict.fromArray([("ContractA", [mockAddress1, mockAddress2])]),
+        ~staticContractsWithStartBlocks=Js.Dict.fromArray([("ContractA", None)]),
         ~dynamicContracts=[dc1, dc2],
         ~startBlock=0,
         ~endBlock=None,
@@ -539,6 +544,7 @@ describe("FetchState.registerDynamicContracts", () => {
           ) :> Internal.eventConfig),
         ],
         ~staticContracts=Js.Dict.fromArray([("Gravatar", [mockAddress0])]),
+        ~staticContractsWithStartBlocks=Js.Dict.fromArray([("Gravatar", None)]),
         ~dynamicContracts=[],
         ~startBlock=10,
         ~endBlock=None,
@@ -779,6 +785,10 @@ describe("FetchState.registerDynamicContracts", () => {
         ~staticContracts=Js.Dict.fromArray([
           ("NftFactory", [mockAddress0, mockAddress1]),
           ("Gravatar", [mockAddress2, mockAddress3]),
+        ]),
+        ~staticContractsWithStartBlocks=Js.Dict.fromArray([
+          ("NftFactory", None),
+          ("Gravatar", None),
         ]),
         ~dynamicContracts=[
           makeDynContractRegistration(
@@ -1592,6 +1602,7 @@ describe("FetchState.getNextQuery & integration", () => {
           wildcard,
         ],
         ~staticContracts=Js.Dict.fromArray([("ContractA", [mockAddress1])]),
+        ~staticContractsWithStartBlocks=Js.Dict.fromArray([("ContractA", None)]),
         ~dynamicContracts=[],
         ~startBlock=0,
         ~endBlock=None,
@@ -1732,6 +1743,7 @@ describe("FetchState.getNextQuery & integration", () => {
       FetchState.make(
         ~eventConfigs,
         ~staticContracts=Js.Dict.empty(),
+        ~staticContractsWithStartBlocks=Js.Dict.empty(),
         ~dynamicContracts=[],
         ~startBlock=0,
         ~endBlock=None,
@@ -1929,6 +1941,7 @@ describe("FetchState unit tests for specific cases", () => {
         wildcard,
       ],
       ~staticContracts=Js.Dict.fromArray([("ContractA", [mockAddress0])]),
+      ~staticContractsWithStartBlocks=Js.Dict.fromArray([("ContractA", None)]),
       ~dynamicContracts=[],
       ~startBlock=0,
       ~endBlock=None,
@@ -2070,6 +2083,7 @@ describe("FetchState unit tests for specific cases", () => {
         (Mock.evmEventConfig(~id="0", ~contractName="ContractA") :> Internal.eventConfig),
       ],
       ~staticContracts=Js.Dict.fromArray([("ContractA", [mockAddress1, mockAddress2])]),
+      ~staticContractsWithStartBlocks=Js.Dict.fromArray([("ContractA", None)]),
       ~dynamicContracts=[],
       ~startBlock=0,
       ~endBlock=None,
@@ -2198,6 +2212,10 @@ describe("FetchState unit tests for specific cases", () => {
       ~staticContracts=Js.Dict.fromArray([
         ("ContractA", [mockAddress1]),
         ("ContractB", [mockAddress2]),
+      ]),
+      ~staticContractsWithStartBlocks=Js.Dict.fromArray([
+        ("ContractA", None),
+        ("ContractB", None),
       ]),
       ~dynamicContracts=[],
       ~startBlock=0,
@@ -2412,6 +2430,7 @@ describe("FetchState unit tests for specific cases", () => {
       let fetchState = FetchState.make(
         ~eventConfigs=[baseEventConfig],
         ~staticContracts=Js.Dict.fromArray([("Gravatar", [mockAddress1])]),
+        ~staticContractsWithStartBlocks=Js.Dict.fromArray([("Gravatar", None)]),
         ~dynamicContracts=[],
         ~startBlock=0,
         ~endBlock=None,

@@ -52,6 +52,7 @@ let make = (
 
   // Aggregate events we want to fetch
   let staticContracts = Js.Dict.empty()
+  let staticContractsWithStartBlocks = Js.Dict.empty()
   let eventConfigs: array<Internal.eventConfig> = []
 
   chainConfig.contracts->Array.forEach(contract => {
@@ -91,11 +92,13 @@ let make = (
     })
 
     staticContracts->Js.Dict.set(contractName, contract.addresses)
+    staticContractsWithStartBlocks->Js.Dict.set(contractName, contract.startBlock)
   })
 
   let fetchState = FetchState.make(
     ~maxAddrInPartition,
     ~staticContracts,
+    ~staticContractsWithStartBlocks,
     ~dynamicContracts=dynamicContracts->Array.map(dc => {
       FetchState.address: dc.contractAddress,
       contractName: (dc.contractType :> string),
