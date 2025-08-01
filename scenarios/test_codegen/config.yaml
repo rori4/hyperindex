@@ -35,6 +35,7 @@ networks:
         abi_file_path: abis/gravatar-abi.json
         address: "0x2B2f78c5BF6D9C12Ee1225D5F374aa91204580c3"
         handler: ./src/EventHandlers.res.js
+        start_block: 500 # Test specific start block for Gravatar
         events:
           - event: "CustomSelection()"
             field_selection:
@@ -58,17 +59,20 @@ networks:
         abi_file_path: abis/NftFactory.json
         address: "0xa2F6E6029638cCb484A2ccb6414499aD3e825CaC"
         handler: src/EventHandlers.ts
+        start_block: 1000 # Test different start block for NftFactory
         events:
           - event: "SimpleNftCreated"
       - name: SimpleNft
         abi_file_path: abis/SimpleNft.json
         handler: src/EventHandlers.ts
+        # No start_block specified - should use network default (1)
         events:
           - event: "Erc20Transfer(address indexed from, address indexed to, uint256 amount)"
           - event: "Transfer"
       - name: TestEvents
         abi_file_path: ./contracts/artifacts/contracts/TestEvents.sol/TestEvents.json
         handler: src/EventHandlers.ts
+        start_block: 2000 # Test another different start block for TestEvents
         events:
           - event: "IndexedUint"
           - event: "IndexedInt"
@@ -89,14 +93,18 @@ networks:
     contracts:
       - name: Noop
         address: "0x0B2f78c5BF6D9C12Ee1225D5F374aa91204580c3"
+        start_block: 100 # Test start block for Noop on chain 1
   - id: 100
     start_block: 1
     contracts:
       - name: EventFiltersTest
+        start_block: 50 # Test start block for EventFiltersTest
   - id: 137
     start_block: 1
     contracts:
       - name: EventFiltersTest
+        # No start_block - should use network default (1)
       - name: Noop
         address: "0x0B2f78c5BF6D9C12Ee1225D5F374aa91204580c3"
+        start_block: 200 # Test start block for Noop on chain 137
 raw_events: true

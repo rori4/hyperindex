@@ -2213,10 +2213,7 @@ describe("FetchState unit tests for specific cases", () => {
         ("ContractA", [mockAddress1]),
         ("ContractB", [mockAddress2]),
       ]),
-      ~staticContractsWithStartBlocks=Js.Dict.fromArray([
-        ("ContractA", None),
-        ("ContractB", None),
-      ]),
+      ~staticContractsWithStartBlocks=Js.Dict.fromArray([("ContractA", None), ("ContractB", None)]),
       ~dynamicContracts=[],
       ~startBlock=0,
       ~endBlock=None,
@@ -2694,6 +2691,332 @@ describe("FetchState.queueItemIsInReorgThreshold", () => {
         ),
         false,
       )
+    },
+  )
+})
+
+describe("FetchState Per-Contract Start Block Tests", () => {
+  it("should correctly set start blocks for static contracts", () => {
+    let staticContracts = Js.Dict.fromArray([
+      ("Contract1", [mockAddress0, mockAddress1]),
+      ("Contract2", [mockAddress2]),
+      ("Contract3", [mockAddress3]),
+    ])
+
+    let staticContractsWithStartBlocks = Js.Dict.fromArray([
+      ("Contract1", Some(1000)), // Specific start block
+      ("Contract2", None), // Use network default
+      ("Contract3", Some(2000)), // Different specific start block
+    ])
+
+    let eventConfigs = [
+      (Mock.evmEventConfig(~id="0", ~contractName="Contract1") :> Internal.eventConfig),
+      (Mock.evmEventConfig(~id="1", ~contractName="Contract2") :> Internal.eventConfig),
+      (Mock.evmEventConfig(~id="2", ~contractName="Contract3") :> Internal.eventConfig),
+    ]
+
+    let fetchState = FetchState.make(
+      ~eventConfigs,
+      ~staticContracts,
+      ~staticContractsWithStartBlocks,
+      ~dynamicContracts=[],
+      ~startBlock=100, // Network start block
+      ~endBlock=None,
+      ~maxAddrInPartition=5,
+      ~chainId,
+    )
+
+    // Contract1 addresses should have start block 1000
+    let contract1Address0 =
+      fetchState.indexingContracts->Utils.Dict.dangerouslyGetNonOption(
+        mockAddress0->Address.toString,
+      )
+    switch contract1Address0 {
+    | Some(contract) =>
+      Assert.equal(
+        contract.startBlock,
+        1000,
+        ~message="Contract1 address 0 should have start block 1000",
+      )
+      Assert.equal(contract.contractName, "Contract1", ~message="Should be Contract1")
+    | None => Assert.fail("Contract1 address 0 not found")
+    }
+
+    let contract1Address1 =
+      fetchState.indexingContracts->Utils.Dict.dangerouslyGetNonOption(
+        mockAddress1->Address.toString,
+      )
+    switch contract1Address1 {
+    | Some(contract) =>
+      Assert.equal(
+        contract.startBlock,
+        1000,
+        ~message="Contract1 address 1 should have start block 1000",
+      )
+    | None => Assert.fail("Contract1 address 1 not found")
+    }
+
+    // Contract2 should use network start block (100)
+    let contract2Address =
+      fetchState.indexingContracts->Utils.Dict.dangerouslyGetNonOption(
+        mockAddress2->Address.toString,
+      )
+    switch contract2Address {
+    | Some(contract) =>
+      Assert.equal(
+        contract.startBlock,
+        100,
+        ~message="Contract2 should use network start block 100",
+      )
+      Assert.equal(contract.contractName, "Contract2", ~message="Should be Contract2")
+    | None => Assert.fail("Contract2 address not found")
+    }
+
+    // Contract3 should have start block 2000
+    let contract3Address =
+      fetchState.indexingContracts->Utils.Dict.dangerouslyGetNonOption(
+        mockAddress3->Address.toString,
+      )
+    switch contract3Address {
+    | Some(contract) =>
+      Assert.equal(contract.startBlock, 2000, ~message="Contract3 should have start block 2000")
+      Assert.equal(contract.contractName, "Contract3", ~message="Should be Contract3")
+    | None => Assert.fail("Contract3 address not found")
+    }
+  })
+
+  it("should create proper partitions with contract-specific start blocks", () => {
+    let staticContracts = Js.Dict.fromArray([
+      ("EarlyContract", [mockAddress0]),
+      ("LateContract", [mockAddress1]),
+    ])
+
+    let staticContractsWithStartBlocks = Js.Dict.fromArray([
+      ("EarlyContract", Some(500)), // Earlier start block
+      ("LateContract", Some(1500)), // Later start block
+    ])
+
+    let eventConfigs = [
+      (Mock.evmEventConfig(~id="0", ~contractName="EarlyContract") :> Internal.eventConfig),
+      (Mock.evmEventConfig(~id="1", ~contractName="LateContract") :> Internal.eventConfig),
+    ]
+
+    let fetchState = FetchState.make(
+      ~eventConfigs,
+      ~staticContracts,
+      ~staticContractsWithStartBlocks,
+      ~dynamicContracts=[],
+      ~startBlock=1000, // Network start block between the two
+      ~endBlock=None,
+      ~maxAddrInPartition=3,
+      ~chainId,
+    )
+
+    // Should have partitions created
+    Assert.equal(
+      fetchState.partitions->Array.length > 0,
+      true,
+      ~message="Should have created partitions",
+    )
+
+    // Partition should have correct latest fetched block based on earliest contract start block
+    let firstPartition = fetchState.partitions->Array.get(0)
+    switch firstPartition {
+    | Some(partition) =>
+      // The latest fetched block should be one less than the earliest start block (500 - 1 = 499)
+      Assert.equal(
+        partition.latestFetchedBlock.blockNumber,
+        499,
+        ~message="Partition should start from block before earliest contract start block",
+      )
+    | None => Assert.fail("No partition found")
+    }
+  })
+
+  it("should handle mixed static and dynamic contracts with different start blocks", () => {
+    let staticContracts = Js.Dict.fromArray([("StaticContract", [mockAddress0])])
+
+    let staticContractsWithStartBlocks = Js.Dict.fromArray([("StaticContract", Some(800))])
+
+    let eventConfigs = [
+      (Mock.evmEventConfig(~id="0", ~contractName="StaticContract") :> Internal.eventConfig),
+      (Mock.evmEventConfig(~id="1", ~contractName="NftFactory") :> Internal.eventConfig),
+    ]
+
+    let dynamicContract = makeDynContractRegistration(
+      ~contractAddress=mockAddress1,
+      ~blockNumber=1200, // Dynamic contract registered at block 1200
+      ~contractType=NftFactory,
+    )
+
+    let fetchState = FetchState.make(
+      ~eventConfigs,
+      ~staticContracts,
+      ~staticContractsWithStartBlocks,
+      ~dynamicContracts=[dynamicContract],
+      ~startBlock=1000,
+      ~endBlock=None,
+      ~maxAddrInPartition=5,
+      ~chainId,
+    )
+
+    // Static contract should have its configured start block
+    let staticContractFound =
+      fetchState.indexingContracts->Utils.Dict.dangerouslyGetNonOption(
+        mockAddress0->Address.toString,
+      )
+    switch staticContractFound {
+    | Some(contract) =>
+      Assert.equal(contract.startBlock, 800, ~message="Static contract should have start block 800")
+      Assert.equal(
+        contract.register,
+        Config,
+        ~message="Static contract should have Config register",
+      )
+    | None => Assert.fail("Static contract not found")
+    }
+
+    // Dynamic contract should have its registration block as start block
+    let dynamicContractFound =
+      fetchState.indexingContracts->Utils.Dict.dangerouslyGetNonOption(
+        mockAddress1->Address.toString,
+      )
+    switch dynamicContractFound {
+    | Some(contract) =>
+      Assert.equal(
+        contract.startBlock,
+        1200,
+        ~message="Dynamic contract should have start block 1200 (registration block)",
+      )
+      switch contract.register {
+      | DC(_) => () // Expected
+      | Config => Assert.fail("Dynamic contract should have DC register")
+      }
+    | None => Assert.fail("Dynamic contract not found")
+    }
+  })
+
+  it("should handle dynamic contract registration with start blocks correctly", () => {
+    let eventConfigs = [
+      (Mock.evmEventConfig(~id="0", ~contractName="Gravatar") :> Internal.eventConfig),
+    ]
+
+    let initialFetchState = FetchState.make(
+      ~eventConfigs,
+      ~staticContracts=Js.Dict.fromArray([("Gravatar", [mockAddress2])]),
+      ~staticContractsWithStartBlocks=Js.Dict.fromArray([("Gravatar", None)]),
+      ~dynamicContracts=[],
+      ~startBlock=1000,
+      ~endBlock=None,
+      ~maxAddrInPartition=3,
+      ~chainId,
+    )
+
+    let dynamicContract1 = makeDynContractRegistration(
+      ~contractAddress=mockAddress0,
+      ~blockNumber=1500, // First DC at block 1500
+    )
+
+    let dynamicContract2 = makeDynContractRegistration(
+      ~contractAddress=mockAddress1,
+      ~blockNumber=1200, // Second DC at earlier block 1200
+    )
+
+    let fetchStateAfterRegistration =
+      initialFetchState->FetchState.registerDynamicContracts(
+        [dynamicContract1, dynamicContract2],
+        ~currentBlockHeight=2000,
+      )
+
+    // Both dynamic contracts should be registered with their respective start blocks
+    let dc1Found =
+      fetchStateAfterRegistration.indexingContracts->Utils.Dict.dangerouslyGetNonOption(
+        mockAddress0->Address.toString,
+      )
+    switch dc1Found {
+    | Some(contract) =>
+      Assert.equal(
+        contract.startBlock,
+        1500,
+        ~message="First dynamic contract should have start block 1500",
+      )
+    | None => Assert.fail("First dynamic contract not found")
+    }
+
+    let dc2Found =
+      fetchStateAfterRegistration.indexingContracts->Utils.Dict.dangerouslyGetNonOption(
+        mockAddress1->Address.toString,
+      )
+    switch dc2Found {
+    | Some(contract) =>
+      Assert.equal(
+        contract.startBlock,
+        1200,
+        ~message="Second dynamic contract should have start block 1200",
+      )
+    | None => Assert.fail("Second dynamic contract not found")
+    }
+
+    // Should have created new partitions for the dynamic contracts
+    Assert.equal(
+      fetchStateAfterRegistration.partitions->Array.length >
+        initialFetchState.partitions->Array.length,
+      true,
+      ~message="Should have created additional partitions for dynamic contracts",
+    )
+  })
+
+  it(
+    "should not register dynamic contract if it has same address as static with earlier start block",
+    () => {
+      let staticContracts = Js.Dict.fromArray([("StaticContract", [mockAddress0])])
+
+      let staticContractsWithStartBlocks = Js.Dict.fromArray([("StaticContract", Some(500))]) // Earlier start block
+
+      let eventConfigs = [
+        (Mock.evmEventConfig(~id="0", ~contractName="StaticContract") :> Internal.eventConfig),
+        (Mock.evmEventConfig(~id="1", ~contractName="Gravatar") :> Internal.eventConfig),
+      ]
+
+      let fetchState = FetchState.make(
+        ~eventConfigs,
+        ~staticContracts,
+        ~staticContractsWithStartBlocks,
+        ~dynamicContracts=[],
+        ~startBlock=1000,
+        ~endBlock=None,
+        ~maxAddrInPartition=3,
+        ~chainId,
+      )
+
+      // Try to register dynamic contract with same address but later start block
+      let dynamicContract = makeDynContractRegistration(
+        ~contractAddress=mockAddress0, // Same address as static
+        ~blockNumber=1200, // Later than static start block (500)
+      )
+
+      let fetchStateAfterAttempt =
+        fetchState->FetchState.registerDynamicContracts([dynamicContract], ~currentBlockHeight=2000)
+
+      // The contract should still have the original static start block, not the dynamic one
+      let contractFound =
+        fetchStateAfterAttempt.indexingContracts->Utils.Dict.dangerouslyGetNonOption(
+          mockAddress0->Address.toString,
+        )
+      switch contractFound {
+      | Some(contract) =>
+        Assert.equal(
+          contract.startBlock,
+          500,
+          ~message="Should keep original static start block 500, not dynamic 1200",
+        )
+        Assert.equal(
+          contract.register,
+          Config,
+          ~message="Should remain as Config register, not change to DC",
+        )
+      | None => Assert.fail("Contract not found")
+      }
     },
   )
 })
