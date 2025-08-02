@@ -1010,16 +1010,8 @@ let make = (
     allIndexingContracts->Array.push(dc)
   })
 
-  // Find the earliest start block among all contracts
-  let earliestStartBlock = ref(startBlock)
-  allIndexingContracts->Array.forEach(contract => {
-    earliestStartBlock := Pervasives.min(earliestStartBlock.contents, contract.startBlock)
-  })
-
-  let latestFetchedBlock = {
-    blockTimestamp: 0,
-    blockNumber: earliestStartBlock.contents - 1,
-  }
+  // We no longer use a global earliest start block for all partitions
+  // Instead, we'll create partitions with their own latestFetchedBlock based on contract start blocks
 
   let notDependingOnAddresses = []
   let normalEventConfigs = []
@@ -1048,13 +1040,18 @@ let make = (
 
   let partitions = []
 
+  // For events that don't depend on addresses, use the network start block
   if notDependingOnAddresses->Array.length > 0 {
+    let latestFetchedBlockForNonAddressDependentEvents = {
+      blockTimestamp: 0,
+      blockNumber: startBlock - 1,
+    }
     partitions->Array.push({
       id: partitions->Array.length->Int.toString,
       status: {
         fetchingStateId: None,
       },
-      latestFetchedBlock,
+      latestFetchedBlock: latestFetchedBlockForNonAddressDependentEvents,
       selection: {
         dependsOnAddresses: false,
         eventConfigs: notDependingOnAddresses,
@@ -1071,47 +1068,74 @@ let make = (
   switch normalEventConfigs {
   | [] => ()
   | _ => {
-      let makePendingNormalPartition = () => {
-        {
-          id: partitions->Array.length->Int.toString,
-          status: {
-            fetchingStateId: None,
-          },
-          latestFetchedBlock,
-          selection: normalSelection,
-          addressesByContractName: Js.Dict.empty(),
-        }
-      }
-
-      let pendingNormalPartition = ref(makePendingNormalPartition())
-
-      let registerAddress = (contractName, address, ~dc: indexingContract) => {
-        let pendingPartition = pendingNormalPartition.contents
-        switch pendingPartition.addressesByContractName->Utils.Dict.dangerouslyGetNonOption(
-          contractName,
-        ) {
-        | Some(addresses) => addresses->Array.push(address)
-        | None => pendingPartition.addressesByContractName->Js.Dict.set(contractName, [address])
-        }
-        indexingContracts->Js.Dict.set(address->Address.toString, dc)
-        if (
-          pendingPartition.addressesByContractName->addressesByContractNameCount ===
-            maxAddrInPartition
-        ) {
-          partitions->Array.push(pendingPartition)
-          pendingNormalPartition := makePendingNormalPartition()
-        }
-      }
-
+      // Group contracts by their start blocks to create efficient partitions
+      let contractsByStartBlock = Js.Dict.empty()
+      
       allIndexingContracts->Array.forEach(contract => {
         if contractNamesWithNormalEvents->Utils.Set.has(contract.contractName) {
-          registerAddress(contract.contractName, contract.address, ~dc=contract)
+          let startBlockKey = contract.startBlock->Int.toString
+          contractsByStartBlock->Utils.Dict.push(startBlockKey, contract)
+          indexingContracts->Js.Dict.set(contract.address->Address.toString, contract)
         }
       })
 
-      if pendingNormalPartition.contents.addressesByContractName->addressesByContractNameCount > 0 {
-        partitions->Array.push(pendingNormalPartition.contents)
-      }
+      // Create partitions for each unique start block
+      contractsByStartBlock->Js.Dict.entries->Array.forEach(((startBlockKey, contractsForStartBlock)) => {
+        let startBlockNum = startBlockKey->Int.fromString->Option.getExn
+        let latestFetchedBlockForThisStartBlock = {
+          blockTimestamp: 0,
+          blockNumber: Pervasives.max(startBlockNum - 1, 0),
+        }
+
+        // Group contracts by contract name within this start block
+        let addressesByContractName = Js.Dict.empty()
+        contractsForStartBlock->Array.forEach(contract => {
+          addressesByContractName->Utils.Dict.push(contract.contractName, contract.address)
+        })
+
+        // Create partitions respecting maxAddrInPartition limit
+        let contractNames = addressesByContractName->Js.Dict.keys
+        let pendingAddressesByContractName = ref(Js.Dict.empty())
+        let pendingAddressCount = ref(0)
+
+        let createPartition = () => {
+          if pendingAddressCount.contents > 0 {
+            partitions->Array.push({
+              id: partitions->Array.length->Int.toString,
+              status: {
+                fetchingStateId: None,
+              },
+              latestFetchedBlock: latestFetchedBlockForThisStartBlock,
+              selection: normalSelection,
+              addressesByContractName: pendingAddressesByContractName.contents,
+            })
+          }
+        }
+
+        for contractNameIdx in 0 to contractNames->Array.length - 1 {
+          let contractName = contractNames->Js.Array2.unsafe_get(contractNameIdx)
+          let addresses = addressesByContractName->Js.Dict.unsafeGet(contractName)
+          
+          for addressIdx in 0 to addresses->Array.length - 1 {
+            let address = addresses->Js.Array2.unsafe_get(addressIdx)
+            
+            // Check if adding this address would exceed the limit
+            if pendingAddressCount.contents >= maxAddrInPartition {
+              createPartition()
+              // Reset for next partition
+              pendingAddressesByContractName := Js.Dict.empty()
+              pendingAddressCount := 0
+            }
+            
+            // Add address to pending partition
+            pendingAddressesByContractName.contents->Utils.Dict.push(contractName, address)
+            pendingAddressCount := pendingAddressCount.contents + 1
+          }
+        }
+
+        // Create final partition for any remaining addresses
+        createPartition()
+      })
     }
   }
 
@@ -1122,10 +1146,32 @@ let make = (
   }
 
   let numAddresses = indexingContracts->Js.Dict.keys->Array.length
+  
+  // Compute the minimum latestFetchedBlock from all partitions
+  let latestFullyFetchedBlock = switch partitions->Array.get(0) {
+  | Some(firstPartition) => {
+      let minBlock = ref(firstPartition.latestFetchedBlock)
+      for idx in 1 to partitions->Array.length - 1 {
+        let p = partitions->Js.Array2.unsafe_get(idx)
+        if p.latestFetchedBlock.blockNumber < minBlock.contents.blockNumber {
+          minBlock := p.latestFetchedBlock
+        }
+      }
+      minBlock.contents
+    }
+  | None => {
+      // Fallback if no partitions (shouldn't happen due to validation above)
+      {
+        blockTimestamp: 0,
+        blockNumber: startBlock - 1,
+      }
+    }
+  }
+  
   Prometheus.IndexingAddresses.set(~addressesCount=numAddresses, ~chainId)
   Prometheus.IndexingPartitions.set(~partitionsCount=partitions->Array.length, ~chainId)
   Prometheus.IndexingBufferSize.set(~bufferSize=0, ~chainId)
-  Prometheus.IndexingBufferBlockNumber.set(~blockNumber=latestFetchedBlock.blockNumber, ~chainId)
+  Prometheus.IndexingBufferBlockNumber.set(~blockNumber=latestFullyFetchedBlock.blockNumber, ~chainId)
   switch endBlock {
   | Some(endBlock) => Prometheus.IndexingEndBlock.set(~endBlock, ~chainId)
   | None => ()
@@ -1139,7 +1185,7 @@ let make = (
     maxAddrInPartition,
     chainId,
     endBlock,
-    latestFullyFetchedBlock: latestFetchedBlock,
+    latestFullyFetchedBlock,
     firstEventBlockNumber: None,
     normalSelection,
     indexingContracts,
