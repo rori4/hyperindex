@@ -139,6 +139,7 @@ pub mod evm {
                     let contract = NetworkContract {
                         name: selected_contract.name.clone(),
                         address,
+                        start_block: None,
                         config: config.clone(),
                     };
 
@@ -279,6 +280,7 @@ pub mod fuel {
                                     .map(|a| a.to_string())
                                     .collect::<Vec<String>>()
                                     .into(),
+                                start_block: None,
                                 config: Some(ContractConfig {
                                     abi_file_path: selected_contract.get_vendored_abi_file_path(),
                                     handler: init_config.language.get_event_handler_directory(),

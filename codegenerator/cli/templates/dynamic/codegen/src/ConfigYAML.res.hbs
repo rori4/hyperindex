@@ -20,6 +20,7 @@ type contract = {
   abi: aliasAbi,
   addresses: array<string>,
   events: array<eventName>,
+  startBlock: option<int>,
 }
 
 type configYaml = {
@@ -49,6 +50,7 @@ let publicConfig = ChainMap.fromArrayUnsafe([
             Types.{{contract.name.capitalized}}.{{event.name}}.name,
             {{/each}}
           ],
+          startBlock: {{#if contract.start_block}}Some({{contract.start_block}}){{else}}None{{/if}},
         }
       ),
       {{/each}}

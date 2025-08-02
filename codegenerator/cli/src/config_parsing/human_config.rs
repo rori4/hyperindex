@@ -82,6 +82,12 @@ pub struct NetworkContract<T> {
                        dynamically."
     )]
     pub address: Addresses,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        description = "The block at which the indexer should start ingesting data for this specific contract. \
+                       If not specified, uses the network's start_block."
+    )]
+    pub start_block: Option<u64>,
     #[serde(flatten)]
     //If this is "None" it should be expected that
     //there is a global config for the contract
@@ -662,6 +668,7 @@ mod tests {
         evm::{ContractConfig, EventDecoder, HumanConfig, Network},
         NetworkContract,
     };
+    use crate::config_parsing::human_config::evm;
     use crate::{config_parsing::human_config::fuel, utils::normalized_list::NormalizedList};
     use pretty_assertions::assert_eq;
     use schemars::{schema_for, Schema};
@@ -713,6 +720,7 @@ events: []
             address: NormalizedList::from(vec![
                 "0x2E645469f354BB4F5c8a05B3b30A929361cf77eC".to_string()
             ]),
+            start_block: None,
             config: Some(ContractConfig {
                 abi_file_path: None,
                 handler: "./src/EventHandler.js".to_string(),
@@ -735,6 +743,7 @@ events: []
         let expected = NetworkContract {
             name: "Contract1".to_string(),
             address: vec![].into(),
+            start_block: None,
             config: Some(ContractConfig {
                 abi_file_path: None,
                 handler: "./src/EventHandler.js".to_string(),
@@ -758,6 +767,7 @@ events: []
         let expected = NetworkContract {
             name: "Contract1".to_string(),
             address: vec!["0x2E645469f354BB4F5c8a05B3b30A929361cf77eC".to_string()].into(),
+            start_block: None,
             config: Some(ContractConfig {
                 abi_file_path: None,
                 handler: "./src/EventHandler.js".to_string(),
@@ -781,6 +791,7 @@ address: ["0x2E645469f354BB4F5c8a05B3b30A929361cf77eC"]
             address: NormalizedList::from(vec![
                 "0x2E645469f354BB4F5c8a05B3b30A929361cf77eC".to_string()
             ]),
+            start_block: None,
             config: None,
         };
 
@@ -864,6 +875,7 @@ address: ["0x2E645469f354BB4F5c8a05B3b30A929361cf77eC"]
                     address: "0x4a2ce054e3e94155f7092f7365b212f7f45105b74819c623744ebcc5d065c6ac"
                         .to_string()
                         .into(),
+                    start_block: None,
                     config: Some(fuel::ContractConfig {
                         abi_file_path: "../abis/greeter-abi.json".to_string(),
                         handler: "./src/EventHandlers.js".to_string(),
@@ -886,6 +898,85 @@ address: ["0x2E645469f354BB4F5c8a05B3b30A929361cf77eC"]
 
         // deserializes fuel config
         assert_eq!(cfg, expected_cfg);
+    }
+
+    #[test]
+    fn deserializes_per_contract_start_block_config() {
+        let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test/configs/per-contract-start-block.yaml");
+
+        let file_str = std::fs::read_to_string(config_path).unwrap();
+
+        let cfg: evm::HumanConfig = serde_yaml::from_str(&file_str).unwrap();
+
+        // Verify the network has the expected start block
+        assert_eq!(cfg.networks[0].start_block, 0);
+
+        // Verify Contract1 has a specific start block
+        assert_eq!(cfg.networks[0].contracts[0].name, "Contract1");
+        assert_eq!(cfg.networks[0].contracts[0].start_block, Some(1000));
+
+        // Verify Contract2 has no start block (uses network default)
+        assert_eq!(cfg.networks[0].contracts[1].name, "Contract2");
+        assert_eq!(cfg.networks[0].contracts[1].start_block, None);
+
+        // Verify Contract3 has a specific start block
+        assert_eq!(cfg.networks[0].contracts[2].name, "Contract3");
+        assert_eq!(cfg.networks[0].contracts[2].start_block, Some(5000));
+    }
+
+    #[test]
+    fn serializes_per_contract_start_block_config() {
+        let network_contract = NetworkContract {
+            name: "TestContract".to_string(),
+            address: "0x1234567890ABCDEF1234567890ABCDEF12345678"
+                .to_string()
+                .into(),
+            start_block: Some(1500),
+            config: Some(evm::ContractConfig {
+                abi_file_path: Some("../abis/Contract1.json".to_string()),
+                handler: "./src/EventHandler.js".to_string(),
+                events: vec![evm::EventConfig {
+                    event: "TestEvent".to_string(),
+                    name: None,
+                    field_selection: None,
+                }],
+            }),
+        };
+
+        let serialized = serde_yaml::to_string(&network_contract).unwrap();
+        let deserialized: NetworkContract<evm::ContractConfig> =
+            serde_yaml::from_str(&serialized).unwrap();
+
+        assert_eq!(network_contract, deserialized);
+        assert_eq!(deserialized.start_block, Some(1500));
+    }
+
+    #[test]
+    fn serializes_network_contract_without_start_block() {
+        let network_contract = NetworkContract {
+            name: "TestContract".to_string(),
+            address: "0x1234567890ABCDEF1234567890ABCDEF12345678"
+                .to_string()
+                .into(),
+            start_block: None,
+            config: Some(evm::ContractConfig {
+                abi_file_path: Some("../abis/Contract1.json".to_string()),
+                handler: "./src/EventHandler.js".to_string(),
+                events: vec![evm::EventConfig {
+                    event: "TestEvent".to_string(),
+                    name: None,
+                    field_selection: None,
+                }],
+            }),
+        };
+
+        let serialized = serde_yaml::to_string(&network_contract).unwrap();
+        let deserialized: NetworkContract<evm::ContractConfig> =
+            serde_yaml::from_str(&serialized).unwrap();
+
+        assert_eq!(network_contract, deserialized);
+        assert_eq!(deserialized.start_block, None);
     }
 
     #[test]

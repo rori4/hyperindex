@@ -673,6 +673,7 @@ impl SystemConfig {
                         .map(|c| NetworkContract {
                             name: c.name,
                             addresses: c.address.into(),
+                            start_block: c.start_block,
                         })
                         .collect();
 
@@ -822,6 +823,7 @@ impl SystemConfig {
                         .map(|c| NetworkContract {
                             name: c.name,
                             addresses: c.address.into(),
+                            start_block: c.start_block,
                         })
                         .collect();
 
@@ -1053,6 +1055,7 @@ pub struct Network {
 pub struct NetworkContract {
     pub name: ContractNameKey,
     pub addresses: Vec<String>,
+    pub start_block: Option<u64>,
 }
 
 impl NetworkContract {
@@ -2137,5 +2140,59 @@ mod test {
             system_config_with_output.parsed_project_paths.generated,
             expected_custom_path
         );
+    }
+
+    #[test]
+    fn test_per_contract_start_block_system_config() {
+        // Test the human config parsing directly without going through system config
+        let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test/configs/per-contract-start-block.yaml");
+
+        let file_str = std::fs::read_to_string(config_path).unwrap();
+
+        let human_config: EvmConfig = serde_yaml::from_str(&file_str).unwrap();
+
+        // Verify the network has the expected start block
+        let network = &human_config.networks[0];
+        assert_eq!(network.start_block, 0);
+
+        // Verify Contract1 has a specific start block
+        let contract1 = &network.contracts[0];
+        assert_eq!(contract1.name, "Contract1");
+        assert_eq!(contract1.start_block, Some(1000));
+
+        // Verify Contract2 has no start block (uses network default)
+        let contract2 = &network.contracts[1];
+        assert_eq!(contract2.name, "Contract2");
+        assert_eq!(contract2.start_block, None);
+
+        // Verify Contract3 has a specific start block
+        let contract3 = &network.contracts[2];
+        assert_eq!(contract3.name, "Contract3");
+        assert_eq!(contract3.start_block, Some(5000));
+    }
+
+    #[test]
+    fn test_network_contract_start_block_fallback() {
+        // Test that when no start_block is specified, it defaults to None
+        let network_contract = super::NetworkContract {
+            name: "TestContract".to_string(),
+            addresses: vec!["0x1234567890ABCDEF1234567890ABCDEF12345678".to_string()],
+            start_block: None,
+        };
+
+        assert_eq!(network_contract.start_block, None);
+    }
+
+    #[test]
+    fn test_network_contract_with_start_block() {
+        // Test that when start_block is specified, it's properly set
+        let network_contract = super::NetworkContract {
+            name: "TestContract".to_string(),
+            addresses: vec!["0x1234567890ABCDEF1234567890ABCDEF12345678".to_string()],
+            start_block: Some(1500),
+        };
+
+        assert_eq!(network_contract.start_block, Some(1500));
     }
 }

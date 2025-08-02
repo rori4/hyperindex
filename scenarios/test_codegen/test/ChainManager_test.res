@@ -28,6 +28,7 @@ let populateChainQueuesWithRandomEvents = (~runTime=1000, ~maxBlockTime=15, ()) 
       ~maxAddrInPartition=Env.maxAddrInPartition,
       ~endBlock=None,
       ~staticContracts=Js.Dict.empty(),
+      ~staticContractsWithStartBlocks=Js.Dict.empty(),
       ~eventConfigs,
       ~dynamicContracts=[],
       ~startBlock=0,

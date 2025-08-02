@@ -359,6 +359,7 @@ pub async fn generate_config_from_subgraph_id(
                     let contract = NetworkContract {
                         name: data_source.name.to_string(),
                         address: vec![data_source.source.address.to_string()].into(),
+                        start_block: None,
                         config: Some(ContractConfig {
                             abi_file_path: Some(format!("abis/{}.json", data_source.name)),
                             handler: get_event_handler_directory(language),

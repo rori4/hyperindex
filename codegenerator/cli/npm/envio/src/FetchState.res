@@ -967,14 +967,28 @@ let make = (
   ~endBlock,
   ~eventConfigs: array<Internal.eventConfig>,
   ~staticContracts: dict<array<Address.t>>,
+  ~staticContractsWithStartBlocks: dict<option<int>>,
   ~dynamicContracts: array<indexingContract>,
   ~maxAddrInPartition,
   ~chainId,
   ~blockLag=?,
 ): t => {
+  // Find the earliest start block among all contracts
+  let earliestStartBlock = ref(startBlock)
+  staticContractsWithStartBlocks->Js.Dict.entries->Array.forEach(((_, startBlockOpt)) => {
+    switch startBlockOpt {
+    | Some(contractStartBlock) =>
+      earliestStartBlock := Pervasives.min(earliestStartBlock.contents, contractStartBlock)
+    | None => ()
+    }
+  })
+  dynamicContracts->Array.forEach(dc => {
+    earliestStartBlock := Pervasives.min(earliestStartBlock.contents, dc.startBlock)
+  })
+
   let latestFetchedBlock = {
     blockTimestamp: 0,
-    blockNumber: startBlock - 1,
+    blockNumber: earliestStartBlock.contents - 1,
   }
 
   let notDependingOnAddresses = []
@@ -1054,10 +1068,16 @@ let make = (
           switch dc {
           | Some(dc) => dc
           | None => {
-              address,
-              contractName,
-              startBlock,
-              register: Config,
+              let contractStartBlock = switch staticContractsWithStartBlocks->Utils.Dict.dangerouslyGetNonOption(contractName) {
+              | Some(Some(contractStartBlock)) => contractStartBlock
+              | Some(None) | None => startBlock
+              }
+              {
+                address,
+                contractName,
+                startBlock: contractStartBlock,
+                register: Config,
+              }
             }
           },
         )
