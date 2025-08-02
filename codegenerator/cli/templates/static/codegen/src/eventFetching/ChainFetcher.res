@@ -58,6 +58,11 @@ let make = (
   chainConfig.contracts->Array.forEach(contract => {
     let contractName = contract.name
 
+    // Log contract configuration
+    logger->Logging.childInfo(
+      `Contract "${contractName}" configuration: addresses=${contract.addresses->Array.length->Int.toString}, startBlock=${contract.startBlock->Option.mapWithDefault("None", Int.toString)}, networkStartBlock=${chainConfig.startBlock->Int.toString}`,
+    )
+
     contract.events->Array.forEach(eventConfig => {
       let {isWildcard} = eventConfig
       let hasContractRegister = eventConfig.contractRegister->Option.isSome

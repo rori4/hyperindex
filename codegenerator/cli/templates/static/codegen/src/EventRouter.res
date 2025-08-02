@@ -42,7 +42,15 @@ module Group = {
         contractAddress->Address.toString,
       ) {
       | Some(indexingContract) =>
-        if indexingContract.startBlock <= blockNumber {
+        let shouldProcess = indexingContract.startBlock <= blockNumber
+        if !shouldProcess {
+          let logger = Logging.createChild(~params={"contractName": indexingContract.contractName, "address": contractAddress->Address.toString, "blockNumber": blockNumber, "startBlock": indexingContract.startBlock})
+          logger->Logging.childInfo(`Filtering out event: block ${blockNumber->Int.toString} < startBlock ${indexingContract.startBlock->Int.toString}`)
+        } else {
+          let logger = Logging.createChild(~params={"contractName": indexingContract.contractName, "address": contractAddress->Address.toString, "blockNumber": blockNumber, "startBlock": indexingContract.startBlock})
+          logger->Logging.childTrace(`Processing event: block ${blockNumber->Int.toString} >= startBlock ${indexingContract.startBlock->Int.toString}`)
+        }
+        if shouldProcess {
           byContractName->Utils.Dict.dangerouslyGetNonOption(indexingContract.contractName)
         } else {
           None

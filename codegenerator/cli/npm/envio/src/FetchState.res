@@ -979,10 +979,23 @@ let make = (
   // Add static contracts to the combined array
   staticContracts->Js.Dict.entries->Array.forEach(((contractName, addresses)) => {
     let contractStartBlock = switch staticContractsWithStartBlocks->Utils.Dict.dangerouslyGetNonOption(contractName) {
-    | Some(Some(contractStartBlock)) => contractStartBlock
-    | Some(None) | None => startBlock
+    | Some(Some(contractStartBlock)) => 
+      let logger = Logging.createChild(~params={"chainId": chainId, "contractName": contractName})
+      logger->Logging.childInfo(`Using contract-specific start block: ${contractStartBlock->Int.toString}`)
+      contractStartBlock
+    | Some(None) => 
+      let logger = Logging.createChild(~params={"chainId": chainId, "contractName": contractName})
+      logger->Logging.childInfo(`Contract start block is None, using network start block: ${startBlock->Int.toString}`)
+      startBlock
+    | None => 
+      let logger = Logging.createChild(~params={"chainId": chainId, "contractName": contractName})
+      logger->Logging.childInfo(`No contract start block found, using network start block: ${startBlock->Int.toString}`)
+      startBlock
     }
+    
     addresses->Array.forEach(address => {
+      let logger = Logging.createChild(~params={"chainId": chainId, "contractName": contractName, "address": address->Address.toString})
+      logger->Logging.childInfo(`Creating indexing contract with start block: ${contractStartBlock->Int.toString}`)
       allIndexingContracts->Array.push({
         address,
         contractName,
