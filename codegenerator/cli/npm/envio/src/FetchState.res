@@ -973,17 +973,34 @@ let make = (
   ~chainId,
   ~blockLag=?,
 ): t => {
+  // Compress static and dynamic contracts into a single array<IndexingContract>
+  let allIndexingContracts = []
+  
+  // Add static contracts to the combined array
+  staticContracts->Js.Dict.entries->Array.forEach(((contractName, addresses)) => {
+    let contractStartBlock = switch staticContractsWithStartBlocks->Utils.Dict.dangerouslyGetNonOption(contractName) {
+    | Some(Some(contractStartBlock)) => contractStartBlock
+    | Some(None) | None => startBlock
+    }
+    addresses->Array.forEach(address => {
+      allIndexingContracts->Array.push({
+        address,
+        contractName,
+        startBlock: contractStartBlock,
+        register: Config,
+      })
+    })
+  })
+  
+  // Add dynamic contracts to the combined array
+  dynamicContracts->Array.forEach(dc => {
+    allIndexingContracts->Array.push(dc)
+  })
+
   // Find the earliest start block among all contracts
   let earliestStartBlock = ref(startBlock)
-  staticContractsWithStartBlocks->Js.Dict.entries->Array.forEach(((_, startBlockOpt)) => {
-    switch startBlockOpt {
-    | Some(contractStartBlock) =>
-      earliestStartBlock := Pervasives.min(earliestStartBlock.contents, contractStartBlock)
-    | None => ()
-    }
-  })
-  dynamicContracts->Array.forEach(dc => {
-    earliestStartBlock := Pervasives.min(earliestStartBlock.contents, dc.startBlock)
+  allIndexingContracts->Array.forEach(contract => {
+    earliestStartBlock := Pervasives.min(earliestStartBlock.contents, contract.startBlock)
   })
 
   let latestFetchedBlock = {
@@ -1055,7 +1072,7 @@ let make = (
 
       let pendingNormalPartition = ref(makePendingNormalPartition())
 
-      let registerAddress = (contractName, address, ~dc: option<indexingContract>=?) => {
+      let registerAddress = (contractName, address, ~dc: indexingContract) => {
         let pendingPartition = pendingNormalPartition.contents
         switch pendingPartition.addressesByContractName->Utils.Dict.dangerouslyGetNonOption(
           contractName,
@@ -1063,24 +1080,7 @@ let make = (
         | Some(addresses) => addresses->Array.push(address)
         | None => pendingPartition.addressesByContractName->Js.Dict.set(contractName, [address])
         }
-        indexingContracts->Js.Dict.set(
-          address->Address.toString,
-          switch dc {
-          | Some(dc) => dc
-          | None => {
-              let contractStartBlock = switch staticContractsWithStartBlocks->Utils.Dict.dangerouslyGetNonOption(contractName) {
-              | Some(Some(contractStartBlock)) => contractStartBlock
-              | Some(None) | None => startBlock
-              }
-              {
-                address,
-                contractName,
-                startBlock: contractStartBlock,
-                register: Config,
-              }
-            }
-          },
-        )
+        indexingContracts->Js.Dict.set(address->Address.toString, dc)
         if (
           pendingPartition.addressesByContractName->addressesByContractNameCount ===
             maxAddrInPartition
@@ -1090,20 +1090,9 @@ let make = (
         }
       }
 
-      staticContracts
-      ->Js.Dict.entries
-      ->Array.forEach(((contractName, addresses)) => {
-        if contractNamesWithNormalEvents->Utils.Set.has(contractName) {
-          addresses->Array.forEach(a => {
-            registerAddress(contractName, a)
-          })
-        }
-      })
-
-      dynamicContracts->Array.forEach(dc => {
-        let contractName = dc.contractName
-        if contractNamesWithNormalEvents->Utils.Set.has(contractName) {
-          registerAddress(contractName, dc.address, ~dc)
+      allIndexingContracts->Array.forEach(contract => {
+        if contractNamesWithNormalEvents->Utils.Set.has(contract.contractName) {
+          registerAddress(contract.contractName, contract.address, ~dc=contract)
         }
       })
 

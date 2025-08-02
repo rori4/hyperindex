@@ -42,7 +42,6 @@ module Group = {
         contractAddress->Address.toString,
       ) {
       | Some(indexingContract) =>
-        Js.Console.log4("Event filter check:", indexingContract.contractName, indexingContract.startBlock, blockNumber)
         if indexingContract.startBlock <= blockNumber {
           byContractName->Utils.Dict.dangerouslyGetNonOption(indexingContract.contractName)
         } else {
