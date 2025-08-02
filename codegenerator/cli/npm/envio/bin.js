@@ -26,7 +26,7 @@ function getExePath() {
 
   try {
     // Since the bin will be located inside `node_modules`, we can simply call require.resolve
-    return require.resolve(`envio-${os}-${arch}/bin/envio${extension}`);
+    return require.resolve(`@rori4/envio-${os}-${arch}/bin/envio${extension}`);
   } catch (e) {
     throw new Error(
       `Couldn't find envio binary inside node_modules for ${os}-${arch}`
