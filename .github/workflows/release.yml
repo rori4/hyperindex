@@ -6,6 +6,7 @@ on:
       - "v*.*.*"
     branches:
       - main
+      - test/release
       # The following two branch names can be used to force build a version for development and sharing a patch.
       - "*force-npm-publish*"
       - "v*.*.*-branch*"
@@ -241,9 +242,9 @@ jobs:
           node_arch=$(echo "${NAME}" | cut -d '-' -f2)
           export node_arch
           if [ "${OS}" = "windows-2022" ]; then
-            export node_pkg="${bin}-windows-${node_arch}"
+            export node_pkg="@rori4/${bin}-windows-${node_arch}"
           else
-            export node_pkg="${bin}-${node_os}-${node_arch}"
+            export node_pkg="@rori4/${bin}-${node_os}-${node_arch}"
           fi
           mkdir -p "${node_pkg}/bin"
           envsubst < package.json.tmpl > "${node_pkg}/package.json"
