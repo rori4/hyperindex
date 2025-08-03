@@ -377,7 +377,7 @@ DefaultForMissingAndEmpty with empty env and empty default: ""
 fn is_valid_release_version_number(version: &str) -> bool {
     let re_version_pattern = Regex::new(r"^\d+\.\d+\.\d+(-(rc|alpha)\.\d+)?$")
         .expect("version regex pattern should be valid regex");
-    re_version_pattern.is_match(version) || version.contains("-main-")
+    re_version_pattern.is_match(version) || version.contains("-main-") || version.contains("-release-")
 }
 
 pub fn get_envio_version() -> Result<String> {

@@ -61,8 +61,9 @@ jobs:
           else
             timestamp=$(date +'%Y%m%d%H%M%S')
             short_commit=${{ steps.vars.outputs.hash_short }}
-            echo "::set-output name=tag_name::v2.0.0-${GITHUB_REF_NAME}-${timestamp}-${short_commit}"
-            echo "::set-output name=release_name::v2.0.0-${GITHUB_REF_NAME}-${timestamp}-${short_commit}"
+            sanitized_branch_name=$(echo "${GITHUB_REF_NAME}" | sed 's/\//-/g')
+            echo "::set-output name=tag_name::v2.0.0-${sanitized_branch_name}-${timestamp}-${short_commit}"
+            echo "::set-output name=release_name::v2.0.0-${sanitized_branch_name}-${timestamp}-${short_commit}"
             echo "::set-output name=is_tagged::false"
             echo "::set-output name=release_type::dev"
           fi
@@ -241,18 +242,20 @@ jobs:
           node_arch=$(echo "${NAME}" | cut -d '-' -f2)
           export node_arch
           if [ "${OS}" = "windows-2022" ]; then
-            export node_pkg="${bin}-windows-${node_arch}"
+            export node_pkg="@rori4/${bin}-windows-${node_arch}"
           else
-            export node_pkg="${bin}-${node_os}-${node_arch}"
+            export node_pkg="@rori4/${bin}-${node_os}-${node_arch}"
           fi
-          mkdir -p "${node_pkg}/bin"
-          envsubst < package.json.tmpl > "${node_pkg}/package.json"
+          # Create directory structure for scoped package
+          pkg_dir=$(echo "${node_pkg}" | sed 's/@//')
+          mkdir -p "${pkg_dir}/bin"
+          envsubst < package.json.tmpl > "${pkg_dir}/package.json"
           if [ "${OS}" = "windows-2022" ]; then
             bin="${bin}.exe"
           fi
-          cp "../../target/${TARGET}/release/${bin}" "${node_pkg}/bin"
-          cp ../README.md "${node_pkg}"
-          cd "${node_pkg}"
+          cp "../../target/${TARGET}/release/${bin}" "${pkg_dir}/bin"
+          cp ../README.md "${pkg_dir}"
+          cd "${pkg_dir}"
           npm publish --access public
 
   publish-npm:
