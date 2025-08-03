@@ -412,9 +412,16 @@ let handleQueryResult = (
   let fs = switch dynamicContracts {
   | [] => chainFetcher.fetchState
   | _ =>
+    // Extract contract start blocks from chain config
+    let contractStartBlocks = Js.Dict.empty()
+    chainFetcher.chainConfig.contracts->Array.forEach(contract => {
+      contractStartBlocks->Js.Dict.set(contract.name, contract.startBlock)
+    })
+    
     chainFetcher.fetchState->FetchState.registerDynamicContracts(
       dynamicContracts,
       ~currentBlockHeight,
+      ~contractStartBlocks,
     )
   }
 

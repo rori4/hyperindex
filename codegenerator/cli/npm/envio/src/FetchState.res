@@ -309,6 +309,7 @@ let registerDynamicContracts = (
   // Might contain duplicates which we should filter out
   dynamicContracts: array<indexingContract>,
   ~currentBlockHeight,
+  ~contractStartBlocks: dict<option<int>>=Js.Dict.empty(),
 ) => {
   if fetchState.normalSelection.eventConfigs->Utils.Array.isEmpty {
     // Can the normalSelection be empty?
@@ -425,11 +426,33 @@ let registerDynamicContracts = (
           addresses->Array.forEach(address => {
             let indexingContract = registeringContracts->Js.Dict.unsafeGet(address->Address.toString)
             
-            // Use the max of contract start block and earliest registering event block
-            let effectiveStartBlock = Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents)
+            // Get the configured start block for this contract type
+            let configuredStartBlock = switch contractStartBlocks->Utils.Dict.dangerouslyGetNonOption(contractName) {
+            | Some(Some(configStartBlock)) => configStartBlock
+            | Some(None) | None => 0 // No configured start block, use 0 as default
+            }
             
-            // Warn if contract start block is before earliest registering event block
-            if indexingContract.startBlock < earliestRegisteringEventBlockNumber.contents {
+            // Use the max of configured start block, contract registration block, and earliest registering event block
+            let effectiveStartBlock = Pervasives.max(
+              configuredStartBlock,
+              Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents)
+            )
+            
+            // Log the effective start block decision
+            if configuredStartBlock > Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents) {
+              let logger = Logging.createChild(
+                ~params={
+                  "chainId": fetchState.chainId,
+                  "contractAddress": address->Address.toString,
+                  "contractName": contractName,
+                  "contractStartBlock": indexingContract.startBlock,
+                  "configuredStartBlock": configuredStartBlock,
+                  "earliestRegisteringBlock": earliestRegisteringEventBlockNumber.contents,
+                  "effectiveStartBlock": effectiveStartBlock,
+                },
+              )
+              logger->Logging.childInfo(`Using configured start block ${effectiveStartBlock->Int.toString} for dynamic contract (overrides registration block ${indexingContract.startBlock->Int.toString})`)
+            } else if indexingContract.startBlock < earliestRegisteringEventBlockNumber.contents {
               let logger = Logging.createChild(
                 ~params={
                   "chainId": fetchState.chainId,
@@ -510,11 +533,33 @@ let registerDynamicContracts = (
               let indexingContract =
                 registeringContracts->Js.Dict.unsafeGet(address->Address.toString)
 
-              // Use the max of contract start block and earliest registering event block
-              let effectiveStartBlock = Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents)
+              // Get the configured start block for this contract type
+              let configuredStartBlock = switch contractStartBlocks->Utils.Dict.dangerouslyGetNonOption(contractName) {
+              | Some(Some(configStartBlock)) => configStartBlock
+              | Some(None) | None => 0 // No configured start block, use 0 as default
+              }
               
-              // Warn if contract start block is before earliest registering event block
-              if indexingContract.startBlock < earliestRegisteringEventBlockNumber.contents {
+              // Use the max of configured start block, contract registration block, and earliest registering event block
+              let effectiveStartBlock = Pervasives.max(
+                configuredStartBlock,
+                Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents)
+              )
+              
+              // Log the effective start block decision
+              if configuredStartBlock > Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents) {
+                let logger = Logging.createChild(
+                  ~params={
+                    "chainId": fetchState.chainId,
+                    "contractAddress": address->Address.toString,
+                    "contractName": contractName,
+                    "contractStartBlock": indexingContract.startBlock,
+                    "configuredStartBlock": configuredStartBlock,
+                    "earliestRegisteringBlock": earliestRegisteringEventBlockNumber.contents,
+                    "effectiveStartBlock": effectiveStartBlock,
+                  },
+                )
+                logger->Logging.childInfo(`Using configured start block ${effectiveStartBlock->Int.toString} for dynamic contract (overrides registration block ${indexingContract.startBlock->Int.toString})`)
+              } else if indexingContract.startBlock < earliestRegisteringEventBlockNumber.contents {
                 let logger = Logging.createChild(
                   ~params={
                     "chainId": fetchState.chainId,
@@ -582,11 +627,33 @@ let registerDynamicContracts = (
               let indexingContract =
                 registeringContracts->Js.Dict.unsafeGet(address->Address.toString)
 
-              // Use the max of contract start block and earliest registering event block
-              let effectiveStartBlock = Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents)
+              // Get the configured start block for this contract type
+              let configuredStartBlock = switch contractStartBlocks->Utils.Dict.dangerouslyGetNonOption(contractName) {
+              | Some(Some(configStartBlock)) => configStartBlock
+              | Some(None) | None => 0 // No configured start block, use 0 as default
+              }
               
-              // Warn if contract start block is before earliest registering event block
-              if indexingContract.startBlock < earliestRegisteringEventBlockNumber.contents {
+              // Use the max of configured start block, contract registration block, and earliest registering event block
+              let effectiveStartBlock = Pervasives.max(
+                configuredStartBlock,
+                Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents)
+              )
+              
+              // Log the effective start block decision
+              if configuredStartBlock > Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents) {
+                let logger = Logging.createChild(
+                  ~params={
+                    "chainId": fetchState.chainId,
+                    "contractAddress": address->Address.toString,
+                    "contractName": contractName,
+                    "contractStartBlock": indexingContract.startBlock,
+                    "configuredStartBlock": configuredStartBlock,
+                    "earliestRegisteringBlock": earliestRegisteringEventBlockNumber.contents,
+                    "effectiveStartBlock": effectiveStartBlock,
+                  },
+                )
+                logger->Logging.childInfo(`Using configured start block ${effectiveStartBlock->Int.toString} for dynamic contract (overrides registration block ${indexingContract.startBlock->Int.toString})`)
+              } else if indexingContract.startBlock < earliestRegisteringEventBlockNumber.contents {
                 let logger = Logging.createChild(
                   ~params={
                     "chainId": fetchState.chainId,
