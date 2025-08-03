@@ -381,6 +381,15 @@ let registerDynamicContracts = (
           earliestRegisteringEventBlockNumber :=
             Pervasives.min(earliestRegisteringEventBlockNumber.contents, dc.startBlock)
           registeringContracts->Js.Dict.set(dc.address->Address.toString, dc)
+          let logger = Logging.createChild(
+            ~params={
+              "chainId": fetchState.chainId,
+              "contractAddress": dc.address->Address.toString,
+              "contractName": dc.contractName,
+              "startBlock": dc.startBlock,
+            },
+          )
+          logger->Logging.childInfo(`Registering dynamic contract with start block: ${dc.startBlock->Int.toString}`)
         }
       }
     | None => {
@@ -408,40 +417,78 @@ let registerDynamicContracts = (
         dcsToStore->Array.length <= fetchState.maxAddrInPartition &&
           !hasDCWithFilterByAddresses.contents
       ) {
-        [
-          {
-            id: fetchState.nextPartitionIndex->Int.toString,
-            status: {
-              fetchingStateId: None,
-            },
-            latestFetchedBlock: {
-              blockNumber: earliestRegisteringEventBlockNumber.contents - 1,
-              blockTimestamp: 0,
-            },
-            selection: fetchState.normalSelection,
-            addressesByContractName,
-          },
-        ]
-      } else {
+        // Even in the simple case, we need to respect individual contract start blocks
+        // Group by effective start block to create appropriate partitions
+        let byEffectiveStartBlock = Js.Dict.empty()
+        
+        addressesByContractName->Js.Dict.entries->Array.forEach(((contractName, addresses)) => {
+          addresses->Array.forEach(address => {
+            let indexingContract = registeringContracts->Js.Dict.unsafeGet(address->Address.toString)
+            
+            // Use the max of contract start block and earliest registering event block
+            let effectiveStartBlock = Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents)
+            
+            // Warn if contract start block is before earliest registering event block
+            if indexingContract.startBlock < earliestRegisteringEventBlockNumber.contents {
+              let logger = Logging.createChild(
+                ~params={
+                  "chainId": fetchState.chainId,
+                  "contractAddress": address->Address.toString,
+                  "contractName": contractName,
+                  "contractStartBlock": indexingContract.startBlock,
+                  "earliestRegisteringBlock": earliestRegisteringEventBlockNumber.contents,
+                  "effectiveStartBlock": effectiveStartBlock,
+                },
+              )
+              logger->Logging.childWarn(`Dynamic contract start block ${indexingContract.startBlock->Int.toString} is before earliest registering event block ${earliestRegisteringEventBlockNumber.contents->Int.toString}. Using earliest registering event block ${effectiveStartBlock->Int.toString} instead.`)
+            } else if indexingContract.startBlock > earliestRegisteringEventBlockNumber.contents {
+              let logger = Logging.createChild(
+                ~params={
+                  "chainId": fetchState.chainId,
+                  "contractAddress": address->Address.toString,
+                  "contractName": contractName,
+                  "contractStartBlock": indexingContract.startBlock,
+                  "effectiveStartBlock": effectiveStartBlock,
+                },
+              )
+              logger->Logging.childInfo(`Using contract-specific start block ${effectiveStartBlock->Int.toString} for dynamic contract`)
+            }
+            
+            let effectiveStartBlockKey = effectiveStartBlock->Int.toString
+            
+            // Group addresses by their effective start blocks
+            switch byEffectiveStartBlock->Utils.Dict.dangerouslyGetNonOption(effectiveStartBlockKey) {
+            | Some(existingByContractName) => 
+              existingByContractName->Utils.Dict.push(contractName, address)
+            | None => 
+              let newByContractName = Js.Dict.empty()
+              newByContractName->Utils.Dict.push(contractName, address)
+              byEffectiveStartBlock->Js.Dict.set(effectiveStartBlockKey, newByContractName)
+            }
+          })
+        })
+        
         let partitions = []
-
-        let earliestRegisteringEventBlockNumber = ref(%raw(`Infinity`))
-        let pendingAddressesByContractName = ref(Js.Dict.empty())
-        let pendingCount = ref(0)
-
-        let addPartition = () =>
+        byEffectiveStartBlock->Js.Dict.entries->Array.forEach(((effectiveStartBlockKey, addressesByContractNameForBlock)) => {
+          let effectiveStartBlockNum = effectiveStartBlockKey->Int.fromString->Option.getExn
+          
           partitions->Array.push({
             id: (fetchState.nextPartitionIndex + partitions->Array.length)->Int.toString,
             status: {
               fetchingStateId: None,
             },
             latestFetchedBlock: {
-              blockNumber: earliestRegisteringEventBlockNumber.contents - 1,
+              blockNumber: Pervasives.max(effectiveStartBlockNum - 1, 0),
               blockTimestamp: 0,
             },
             selection: fetchState.normalSelection,
-            addressesByContractName: pendingAddressesByContractName.contents,
+            addressesByContractName: addressesByContractNameForBlock,
           })
+        })
+        
+        partitions
+      } else {
+        let partitions = []
 
         // I use for loops instead of forEach, so ReScript better inlines ref access
         for idx in 0 to addressesByContractName->Js.Dict.keys->Array.length - 1 {
@@ -456,30 +503,69 @@ let registerDynamicContracts = (
           // on the client side, so we need to keep the old logic of creating
           // a partition for every block range, so there are no irrelevant events
           if contractConfig.filterByAddresses {
-            let byStartBlock = Js.Dict.empty()
+            let byEffectiveStartBlock = Js.Dict.empty()
 
             for jdx in 0 to addresses->Array.length - 1 {
               let address = addresses->Js.Array2.unsafe_get(jdx)
               let indexingContract =
                 registeringContracts->Js.Dict.unsafeGet(address->Address.toString)
 
-              byStartBlock->Utils.Dict.push(indexingContract.startBlock->Int.toString, address)
+              // Use the max of contract start block and earliest registering event block
+              let effectiveStartBlock = Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents)
+              
+              // Warn if contract start block is before earliest registering event block
+              if indexingContract.startBlock < earliestRegisteringEventBlockNumber.contents {
+                let logger = Logging.createChild(
+                  ~params={
+                    "chainId": fetchState.chainId,
+                    "contractAddress": address->Address.toString,
+                    "contractName": contractName,
+                    "contractStartBlock": indexingContract.startBlock,
+                    "earliestRegisteringBlock": earliestRegisteringEventBlockNumber.contents,
+                    "effectiveStartBlock": effectiveStartBlock,
+                  },
+                )
+                logger->Logging.childWarn(`Dynamic contract start block ${indexingContract.startBlock->Int.toString} is before earliest registering event block ${earliestRegisteringEventBlockNumber.contents->Int.toString}. Using earliest registering event block ${effectiveStartBlock->Int.toString} instead.`)
+              } else if indexingContract.startBlock > earliestRegisteringEventBlockNumber.contents {
+                let logger = Logging.createChild(
+                  ~params={
+                    "chainId": fetchState.chainId,
+                    "contractAddress": address->Address.toString,
+                    "contractName": contractName,
+                    "contractStartBlock": indexingContract.startBlock,
+                    "effectiveStartBlock": effectiveStartBlock,
+                  },
+                )
+                logger->Logging.childInfo(`Using contract-specific start block ${effectiveStartBlock->Int.toString} for dynamic contract`)
+              }
+
+              byEffectiveStartBlock->Utils.Dict.push(effectiveStartBlock->Int.toString, address)
             }
 
             // Will be in the ASC order by Js spec
-            byStartBlock
+            byEffectiveStartBlock
             ->Js.Dict.keys
-            ->Js.Array2.forEach(startBlockKey => {
-              let addresses = byStartBlock->Js.Dict.unsafeGet(startBlockKey)
+            ->Js.Array2.forEach(effectiveStartBlockKey => {
+              let addresses = byEffectiveStartBlock->Js.Dict.unsafeGet(effectiveStartBlockKey)
               let addressesByContractName = Js.Dict.empty()
               addressesByContractName->Js.Dict.set(contractName, addresses)
+              let effectiveStartBlockNum = effectiveStartBlockKey->Int.fromString->Option.getExn
+              let logger = Logging.createChild(
+                ~params={
+                  "chainId": fetchState.chainId,
+                  "contractName": contractName,
+                  "startBlock": effectiveStartBlockNum,
+                  "addressCount": addresses->Array.length,
+                },
+              )
+              logger->Logging.childInfo(`Creating partition for dynamic contracts with effective start block: ${effectiveStartBlockNum->Int.toString}`)
               partitions->Array.push({
                 id: (fetchState.nextPartitionIndex + partitions->Array.length)->Int.toString,
                 status: {
                   fetchingStateId: None,
                 },
                 latestFetchedBlock: {
-                  blockNumber: Pervasives.max(startBlockKey->Int.fromString->Option.getExn - 1, 0),
+                  blockNumber: Pervasives.max(effectiveStartBlockNum - 1, 0),
                   blockTimestamp: 0,
                 },
                 selection: fetchState.normalSelection,
@@ -487,34 +573,114 @@ let registerDynamicContracts = (
               })
             })
           } else {
-            // The goal is to try to split partitions the way,
-            // so there are mostly addresses of the same contract in each partition
-            // TODO: Should do the same for the initial FetchState creation
+            // For contracts that don't filter by addresses, we need to group them by effective start block
+            // to ensure proper partitioning based on individual contract start blocks
+            let byEffectiveStartBlock = Js.Dict.empty()
+
             for jdx in 0 to addresses->Array.length - 1 {
               let address = addresses->Js.Array2.unsafe_get(jdx)
-              if pendingCount.contents === fetchState.maxAddrInPartition {
-                addPartition()
-                pendingAddressesByContractName := Js.Dict.empty()
-                pendingCount := 0
-                earliestRegisteringEventBlockNumber := %raw(`Infinity`)
-              }
-
               let indexingContract =
                 registeringContracts->Js.Dict.unsafeGet(address->Address.toString)
 
-              pendingCount := pendingCount.contents + 1
-              pendingAddressesByContractName.contents->Utils.Dict.push(contractName, address)
-              earliestRegisteringEventBlockNumber :=
-                Pervasives.min(
-                  earliestRegisteringEventBlockNumber.contents,
-                  indexingContract.startBlock,
+              // Use the max of contract start block and earliest registering event block
+              let effectiveStartBlock = Pervasives.max(indexingContract.startBlock, earliestRegisteringEventBlockNumber.contents)
+              
+              // Warn if contract start block is before earliest registering event block
+              if indexingContract.startBlock < earliestRegisteringEventBlockNumber.contents {
+                let logger = Logging.createChild(
+                  ~params={
+                    "chainId": fetchState.chainId,
+                    "contractAddress": address->Address.toString,
+                    "contractName": contractName,
+                    "contractStartBlock": indexingContract.startBlock,
+                    "earliestRegisteringBlock": earliestRegisteringEventBlockNumber.contents,
+                    "effectiveStartBlock": effectiveStartBlock,
+                  },
                 )
-            }
-          }
-        }
+                logger->Logging.childWarn(`Dynamic contract start block ${indexingContract.startBlock->Int.toString} is before earliest registering event block ${earliestRegisteringEventBlockNumber.contents->Int.toString}. Using earliest registering event block ${effectiveStartBlock->Int.toString} instead.`)
+              } else if indexingContract.startBlock > earliestRegisteringEventBlockNumber.contents {
+                let logger = Logging.createChild(
+                  ~params={
+                    "chainId": fetchState.chainId,
+                    "contractAddress": address->Address.toString,
+                    "contractName": contractName,
+                    "contractStartBlock": indexingContract.startBlock,
+                    "effectiveStartBlock": effectiveStartBlock,
+                  },
+                )
+                logger->Logging.childInfo(`Using contract-specific start block ${effectiveStartBlock->Int.toString} for dynamic contract`)
+              }
 
-        if pendingCount.contents > 0 {
-          addPartition()
+              byEffectiveStartBlock->Utils.Dict.push(effectiveStartBlock->Int.toString, {
+                address,
+                contractName,
+                startBlock: effectiveStartBlock,
+                register: indexingContract.register,
+              })
+            }
+
+            // Process each effective start block group
+            byEffectiveStartBlock
+            ->Js.Dict.keys
+            ->Js.Array2.forEach(effectiveStartBlockKey => {
+              let contractsForStartBlock = byEffectiveStartBlock->Js.Dict.unsafeGet(effectiveStartBlockKey)
+              let effectiveStartBlockNum = effectiveStartBlockKey->Int.fromString->Option.getExn
+              
+              // Group by contract name within this start block
+              let addressesByContractNameForStartBlock = Js.Dict.empty()
+              contractsForStartBlock->Array.forEach(({address, contractName}) => {
+                addressesByContractNameForStartBlock->Utils.Dict.push(contractName, address)
+              })
+
+              // Split into partitions respecting maxAddrInPartition
+              let pendingAddressesByContractName = ref(Js.Dict.empty())
+              let pendingCount = ref(0)
+
+              let addPartitionForStartBlock = () =>
+                if pendingCount.contents > 0 {
+                  let logger = Logging.createChild(
+                    ~params={
+                      "chainId": fetchState.chainId,
+                      "startBlock": effectiveStartBlockNum,
+                      "addressCount": pendingCount.contents,
+                    },
+                  )
+                  logger->Logging.childInfo(`Creating partition for dynamic contracts with effective start block: ${effectiveStartBlockNum->Int.toString}`)
+                  partitions->Array.push({
+                    id: (fetchState.nextPartitionIndex + partitions->Array.length)->Int.toString,
+                    status: {
+                      fetchingStateId: None,
+                    },
+                    latestFetchedBlock: {
+                      blockNumber: Pervasives.max(effectiveStartBlockNum - 1, 0),
+                      blockTimestamp: 0,
+                    },
+                    selection: fetchState.normalSelection,
+                    addressesByContractName: pendingAddressesByContractName.contents,
+                  })
+                }
+
+              // Add addresses to partitions, creating new partitions when hitting the limit
+              addressesByContractNameForStartBlock->Js.Dict.keys->Array.forEach(contractName => {
+                let addresses = addressesByContractNameForStartBlock->Js.Dict.unsafeGet(contractName)
+                for addressIdx in 0 to addresses->Array.length - 1 {
+                  let address = addresses->Js.Array2.unsafe_get(addressIdx)
+                  
+                  if pendingCount.contents >= fetchState.maxAddrInPartition {
+                    addPartitionForStartBlock()
+                    pendingAddressesByContractName := Js.Dict.empty()
+                    pendingCount := 0
+                  }
+
+                  pendingAddressesByContractName.contents->Utils.Dict.push(contractName, address)
+                  pendingCount := pendingCount.contents + 1
+                }
+              })
+
+              // Create final partition for any remaining addresses in this start block group
+              addPartitionForStartBlock()
+            })
+          }
         }
 
         partitions
